@@ -1,0 +1,89 @@
+.container {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #1a1a1a;
+    color: #f0f0f0;
+    padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.card {
+    background-color: #252525;
+    padding: 30px;
+    border-radius: 15px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+}
+
+.card h1 {
+    margin-top: 0;
+    color: #ffffff;
+    font-size: 1.6em;
+    margin-bottom: 25px;
+}
+
+.button {
+    padding: 12px 24px;
+    font-size: 1.1em;
+    font-weight: bold;
+    color: #ffffff;
+    background: linear-gradient(45deg, #007bff, #0056b3);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 15px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 123, 255, 0.4);
+}
+
+.dataDisplay {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.dataGrid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px 20px;
+    text-align: left;
+}
+
+.dataGrid strong {
+    color: #a0a0a0;
+    font-weight: 500;
+}
+
+.dataGrid span {
+    font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+    font-weight: bold;
+    color: #4caf50;
+    background-color: #333;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.dataDisplay h2 {
+    font-size: 1.2em;
+    color: #cccccc;
+    margin-top: 25px;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #444;
+    padding-bottom: 8px;
+}
+
+.error {
+    color: #ff4d4d;
+    margin-top: 20px;
+}

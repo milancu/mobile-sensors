@@ -1,103 +1,120 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+import { useState, useEffect } from 'react';
+import styles from '../styles/Senzory.module.css';
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+// --- OPRAVA: KROK 1 ---
+// Vytvoříme si vlastní typ, který rozšiřuje standardní DeviceOrientationEvent
+// o metodu requestPermission, specifickou pro iOS.
+interface DeviceOrientationEventiOS extends DeviceOrientationEvent {
+    requestPermission?: () => Promise<'granted' | 'denied' | 'default'>;
 }
+
+// Původní typy pro stav zůstávají stejné
+interface OrientationState {
+    alpha: number | null;
+    beta: number | null;
+    gamma: number | null;
+}
+
+interface MotionState {
+    x: number | null;
+    y: number | null;
+    z: number | null;
+}
+
+const Page = () => {
+    const [orientation, setOrientation] = useState<OrientationState>({ alpha: null, beta: null, gamma: null });
+    const [acceleration, setAcceleration] = useState<MotionState>({ x: null, y: null, z: null });
+    const [permissionGranted, setPermissionGranted] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const requestPermission = async () => {
+        // --- OPRAVA: KROK 2 ---
+        // Použijeme náš nový typ místo `any`.
+        const DeviceOrientationEvent = window.DeviceOrientationEvent as unknown as DeviceOrientationEventiOS;
+
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                const permissionState = await DeviceOrientationEvent.requestPermission();
+                if (permissionState === 'granted') {
+                    setPermissionGranted(true);
+                } else {
+                    setError('Přístup k senzorům byl zamítnut.');
+                    setPermissionGranted(false);
+                }
+            } catch (err) {
+                setError('Došlo k chybě při žádosti o povolení.');
+                console.error(err);
+            }
+        } else {
+            setPermissionGranted(true);
+        }
+    };
+
+    useEffect(() => {
+        if (!permissionGranted) return;
+
+        const handleOrientation = (event: DeviceOrientationEvent) => {
+            setOrientation({
+                alpha: event.alpha,
+                beta: event.beta,
+                gamma: event.gamma,
+            });
+        };
+
+        const handleMotion = (event: DeviceMotionEvent) => {
+            setAcceleration({
+                x: event.acceleration?.x ?? null,
+                y: event.acceleration?.y ?? null,
+                z: event.acceleration?.z ?? null,
+            });
+        };
+
+        window.addEventListener('deviceorientation', handleOrientation);
+        window.addEventListener('devicemotion', handleMotion);
+
+        return () => {
+            window.removeEventListener('deviceorientation', handleOrientation);
+            window.removeEventListener('devicemotion', handleMotion);
+        };
+    }, [permissionGranted]);
+
+    const format = (value: number | null) => value?.toFixed(2) ?? '--';
+
+    return (
+        <div className={styles.container}>
+            <div className={styles.card}>
+                <h1>Data ze senzorů (Next.js)</h1>
+
+                {!permissionGranted ? (
+                    <div>
+                        <p>Pro zobrazení dat je potřeba povolit přístup k senzorům pohybu.</p>
+                        <button onClick={requestPermission} className={styles.button}>
+                            Povolit přístup
+                        </button>
+                        {error && <p className={styles.error}>{error}</p>}
+                    </div>
+                ) : (
+                    <div className={styles.dataDisplay}>
+                        <h2>Orientace (Gyroskop)</h2>
+                        <div className={styles.dataGrid}>
+                            <strong>Alpha (otáčení):</strong> <span>{format(orientation.alpha)}</span>
+                            <strong>Beta (předklon):</strong> <span>{format(orientation.beta)}</span>
+                            <strong>Gamma (úklon):</strong> <span>{format(orientation.gamma)}</span>
+                        </div>
+
+                        <h2>Akcelerace (bez gravitace)</h2>
+                        <div className={styles.dataGrid}>
+                            <strong>Osa X:</strong> <span>{format(acceleration.x)}</span>
+                            <strong>Osa Y:</strong> <span>{format(acceleration.y)}</span>
+                            <strong>Osa Z:</strong> <span>{format(acceleration.z)}</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default Page;
