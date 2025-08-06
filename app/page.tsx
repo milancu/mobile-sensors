@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react';
-import styles from '../styles/Senzory.module.css';
+import styles from './styles/Senzory.module.css';
 
 // --- OPRAVA: KROK 1 ---
 // Vytvoříme si vlastní typ, který rozšiřuje standardní DeviceOrientationEvent
