@@ -20,13 +20,12 @@ interface MotionState {
     z: number | null;
 }
 
-const SenzoryPage = () => {
+const Page = () => {
     const [orientation, setOrientation] = useState<OrientationState>({ alpha: null, beta: null, gamma: null });
     const [acceleration, setAcceleration] = useState<MotionState>({ x: null, y: null, z: null });
     const [permissionGranted, setPermissionGranted] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // --- PŘIDÁNO: Stav pro sledování úrovně vibrací ---
     const [vibrationLevel, setVibrationLevel] = useState(0);
 
     const requestPermission = async () => {
@@ -59,24 +58,29 @@ const SenzoryPage = () => {
                 gamma: event.gamma,
             });
 
-            // --- PŘIDÁNO: Logika pro vibrace ---
             if (navigator.vibrate && event.gamma !== null) {
-                // Omezíme gamma na náš pracovní rozsah -45 až 0
-                const clampedGamma = Math.max(-45, Math.min(0, event.gamma));
+                // ZMĚNA: Pracovní rozsah je nyní -60 až 0
+                const activeRange = 60.0;
+                const clampedGamma = Math.max(-activeRange, Math.min(0, event.gamma));
 
-                // Převedeme gamma na úroveň intenzity 0-10 (0 = žádná, 10 = max)
-                // Když je gamma -45, level = 0. Když je gamma 0, level = 10.
-                const level = Math.round(((clampedGamma + 45) / 45) * 10);
-                setVibrationLevel(level);
+                // ZMĚNA: Převádíme gamma na normalizovanou hodnotu 0 až 1
+                const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
 
-                // Pokud je úroveň 0 (nebo jsme mimo rozsah), vypneme vibrace
-                if (level === 0 || event.gamma < -45) {
+                // Pro zobrazení stále používáme úroveň 0-10
+                setVibrationLevel(Math.round(normalizedIntensity * 10));
+
+                // ZMĚNA: Pokud jsme mimo aktivní rozsah, vypneme vibrace
+                if (event.gamma < -activeRange || event.gamma > 0) {
                     navigator.vibrate(0);
                 } else {
-                    // Jinak spustíme vibraci. Délka pulzu se zvyšuje s úrovní.
-                    // Událost se spouští velmi rychle, takže stačí krátký pulz.
-                    const pulseDuration = level * 15; // max 150ms pulz
-                    navigator.vibrate(pulseDuration);
+                    // ZMĚNA: Logika pro plynulou vibraci pomocí vzoru
+                    const totalCycleTime = 100; // Celková délka jednoho cyklu vibrace+pauza v ms
+                    const minVibrationOn = 10; // Minimální délka vibrace, aby vrněl i na minimu
+
+                    const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * normalizedIntensity);
+                    const offDuration = totalCycleTime - onDuration;
+
+                    navigator.vibrate([onDuration, offDuration]);
                 }
             }
         };
@@ -95,7 +99,6 @@ const SenzoryPage = () => {
         return () => {
             window.removeEventListener('deviceorientation', handleOrientation);
             window.removeEventListener('devicemotion', handleMotion);
-            // Při opuštění stránky pro jistotu vypneme vibrace
             if (navigator.vibrate) {
                 navigator.vibrate(0);
             }
@@ -118,7 +121,6 @@ const SenzoryPage = () => {
                     </div>
                 ) : (
                     <div className={styles.dataDisplay}>
-                        {/* --- PŘIDÁNO: Zobrazení úrovně vibrací --- */}
                         <h2>Vibrace (Akcelerace)</h2>
                         <div className={styles.dataGrid}>
                             <strong>Úroveň (0-10):</strong> <span>{vibrationLevel}</span>
@@ -144,4 +146,4 @@ const SenzoryPage = () => {
     );
 };
 
-export default SenzoryPage;
+export default Page;
