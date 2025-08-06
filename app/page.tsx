@@ -1,161 +1,288 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react';
+
+import {useEffect, useState} from 'react';
+
 import styles from './styles/Senzory.module.css';
 
-// Typy pro TypeScript
+
+// Typy zůstávají stejné
+
 interface DeviceOrientationEventiOS extends DeviceOrientationEvent {
-    requestPermission?: () => Promise<'granted' | 'denied' | 'default'>;
+
+  requestPermission?: () => Promise<'granted' | 'denied' | 'default'>;
+
 }
 
-// --- ZDE JE FINÁLNÍ OPRAVA ---
-// Rozšiřujeme globální typ, abychom předešli konfliktu.
-declare global {
-    interface ScreenOrientation {
-        lock(orientation: 'landscape'): Promise<void>;
-    }
+
+interface OrientationState {
+
+  alpha: number | null;
+
+  beta: number | null;
+
+  gamma: number | null;
+
 }
+
+
+interface MotionState {
+
+  x: number | null;
+
+  y: number | null;
+
+  z: number | null;
+
+}
+
 
 const Page = () => {
-    const [permissionGranted, setPermissionGranted] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [vibrationLevel, setVibrationLevel] = useState(0);
-    const [isGasPressed, setIsGasPressed] = useState(false);
 
-    const orientationRef = useRef({ alpha: 0, beta: 0, gamma: 0 });
-    const animationFrameId = useRef<number | null>(null);
-    const gasPressedRef = useRef(false);
+  const [orientation, setOrientation] = useState<OrientationState>({alpha: null, beta: null, gamma: null});
 
-    const requestPermission = async () => {
-        // Část pro povolení senzorů
-        try {
-            const DeviceOrientationEvent = window.DeviceOrientationEvent as unknown as DeviceOrientationEventiOS;
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                const permissionState = await DeviceOrientationEvent.requestPermission();
-                if (permissionState === 'granted') {
-                    setPermissionGranted(true);
-                } else {
-                    setError('Přístup k senzorům byl zamítnut.');
-                    return;
-                }
-            } else {
-                setPermissionGranted(true);
-            }
-        } catch (err) {
-            console.error('Chyba při žádosti o povolení senzorů:', err);
-            setError('Došlo k chybě při žádosti o povolení senzorů.');
-            return;
+  const [acceleration, setAcceleration] = useState<MotionState>({x: null, y: null, z: null});
+
+  const [permissionGranted, setPermissionGranted] = useState(false);
+
+  const [error, setError] = useState<string | null>(null);
+
+
+  const [vibrationLevel, setVibrationLevel] = useState(0);
+
+
+  const requestPermission = async () => {
+
+    const DeviceOrientationEvent = window.DeviceOrientationEvent as unknown as DeviceOrientationEventiOS;
+
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+
+      try {
+
+        const permissionState = await DeviceOrientationEvent.requestPermission();
+
+        if (permissionState === 'granted') {
+
+          setPermissionGranted(true);
+
+        } else {
+
+          setError('Přístup k senzorům byl zamítnut.');
+
+          setPermissionGranted(false);
+
         }
 
-        // Část pro fullscreen a zamknutí orientace
-        try {
-            if (document.documentElement.requestFullscreen) {
-                await document.documentElement.requestFullscreen();
-            }
+      } catch (err) {
 
-            if (screen.orientation && screen.orientation.lock) {
-                await screen.orientation.lock('landscape');
-            }
+        setError('Došlo k chybě při žádosti o povolení.');
 
-        } catch (err) {
-            console.error("Zamknutí orientace nebo fullscreen se nezdařilo:", err);
+        console.error(err);
+
+      }
+
+    } else {
+
+      setPermissionGranted(true);
+
+    }
+
+  };
+
+
+  useEffect(() => {
+
+    if (!permissionGranted) return;
+
+
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+
+      setOrientation({
+
+        alpha: event.alpha,
+
+        beta: event.beta,
+
+        gamma: event.gamma,
+
+      });
+
+
+      if (navigator.vibrate && event.gamma !== null) {
+
+        const activeRange = 60.0;
+
+        const clampedGamma = Math.max(-activeRange, Math.min(0, event.gamma));
+
+
+// Krok 1: Normalizujeme intenzitu na 0-1 jako předtím
+
+        const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
+
+
+// ZÁSADNÍ ZMĚNA 1: Aplikujeme exponenciální křivku pro dramatičtější zrychlení
+
+// Umocněním na třetí bude nárůst zpočátku pomalý a na konci velmi rychlý.
+
+        const easedIntensity = Math.pow(normalizedIntensity, 3);
+
+
+// Pro zobrazení stále používáme původní lineární hodnotu pro lepší přehlednost
+
+        setVibrationLevel(Math.round(normalizedIntensity * 10));
+
+
+        if (event.gamma < -activeRange || event.gamma > 0) {
+
+          navigator.vibrate(0);
+
+        } else {
+
+// ZÁSADNÍ ZMĚNA 2: Silnější a plynulejší vibrace
+
+// Zvýšíme celkovou délku cyklu, aby pulzy byly delší a silnější.
+
+          const totalCycleTime = 400; // ms (bylo 100)
+
+
+// Zvýšíme minimální sílu, aby motor "běžel" citelněji i na volnoběh.
+
+          const minVibrationOn = 50; // ms (bylo 10)
+
+
+// Vypočítáme délku vibrace na základě nové exponenciální intenzity
+
+          const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
+
+
+// Pauzu mezi vibracemi nastavíme na velmi malou hodnotu pro pocit kontinuity.
+
+          const offDuration = 10; // ms
+
+
+          navigator.vibrate([onDuration, offDuration]);
+
         }
+
+      }
+
     };
 
-    // EFEKT 1: Čtení dat ze senzorů
-    useEffect(() => {
-        if (!permissionGranted) return;
-        const handleOrientation = (event: DeviceOrientationEvent) => {
-            orientationRef.current = {
-                alpha: event.alpha ?? 0,
-                beta: event.beta ?? 0,
-                gamma: event.gamma ?? 0,
-            };
-        };
-        window.addEventListener('deviceorientation', handleOrientation);
-        return () => window.removeEventListener('deviceorientation', handleOrientation);
-    }, [permissionGranted]);
 
-    // EFEKT 2: Synchronizace stavu plynu s ref proměnnou
-    useEffect(() => {
-        gasPressedRef.current = isGasPressed;
-    }, [isGasPressed]);
+    const handleMotion = (event: DeviceMotionEvent) => {
 
-    // EFEKT 3: Hlavní smyčka pro vibrace
-    useEffect(() => {
-        const vibrationLoop = () => {
-            if (!gasPressedRef.current) {
-                if (navigator.vibrate) navigator.vibrate(0);
-                setVibrationLevel(0);
-                animationFrameId.current = requestAnimationFrame(vibrationLoop);
-                return;
-            }
-            const { gamma } = orientationRef.current;
-            const activeRange = 60.0;
-            const clampedGamma = Math.max(-activeRange, Math.min(0, gamma));
-            const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
-            const easedIntensity = Math.pow(normalizedIntensity, 3);
-            setVibrationLevel(Math.round(normalizedIntensity * 10));
-            if (gamma < -activeRange || gamma > 0) {
-                if (navigator.vibrate) navigator.vibrate(0);
-            } else {
-                if(navigator.vibrate) {
-                    const totalCycleTime = 400;
-                    const minVibrationOn = 50;
-                    const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
-                    const offDuration = 10;
-                    navigator.vibrate([onDuration, offDuration]);
-                }
-            }
-            animationFrameId.current = requestAnimationFrame(vibrationLoop);
-        };
-        if (permissionGranted) {
-            animationFrameId.current = requestAnimationFrame(vibrationLoop);
-        }
-        return () => {
-            if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-            if (navigator.vibrate) navigator.vibrate(0);
-        };
-    }, [permissionGranted]);
+      setAcceleration({
 
-    // Handlery pro tlačítko plynu
-    const handleGasPress = () => setIsGasPressed(true);
-    const handleGasRelease = () => setIsGasPressed(false);
+        x: event.acceleration?.x ?? null,
 
-    return (
-        <div className={styles.container}>
-            <div className={styles.card}>
-                <h1>Ovladač RC Auta</h1>
-                {!permissionGranted ? (
-                    <div>
-                        <p>Pro ovládání povolte prosím přístup k senzorům pohybu.</p>
-                        <p style={{fontSize: '0.8em', color: '#888'}}>Po stisknutí se stránka přepne na celou obrazovku a otočí na šířku.</p>
-                        <button onClick={requestPermission} className={styles.button}>
-                            Start & Povolit přístup
-                        </button>
-                        {error && <p className={styles.error}>{error}</p>}
-                    </div>
-                ) : (
-                    <div className={styles.controlInterface}>
-                        <div className={styles.infoDisplay}>
-                            <strong>Úroveň plynu:</strong>
-                            <span className={styles.levelText}>{vibrationLevel}</span>
-                        </div>
-                        <button
-                            className={`${styles.gasButton} ${isGasPressed ? styles.gasButtonPressed : ''}`}
-                            onMouseDown={handleGasPress}
-                            onMouseUp={handleGasRelease}
-                            onMouseLeave={handleGasRelease} // Pro případ, že uživatel sjede myší z tlačítka
-                            onTouchStart={handleGasPress}
-                            onTouchEnd={handleGasRelease}
-                        >
-                            Plyn
-                        </button>
-                    </div>
-                )}
+        y: event.acceleration?.y ?? null,
+
+        z: event.acceleration?.z ?? null,
+
+      });
+
+    };
+
+
+    window.addEventListener('deviceorientation', handleOrientation);
+
+    window.addEventListener('devicemotion', handleMotion);
+
+
+    return () => {
+
+      window.removeEventListener('deviceorientation', handleOrientation);
+
+      window.removeEventListener('devicemotion', handleMotion);
+
+      if (navigator.vibrate) {
+
+        navigator.vibrate(0);
+
+      }
+
+    };
+
+  }, [permissionGranted]);
+
+
+  const format = (value: number | null) => value?.toFixed(2) ?? '--';
+
+
+  return (
+
+    <div className={styles.container}>
+
+      <div className={styles.card}>
+
+        <h1>Data ze senzorů (Next.js)</h1>
+
+        {!permissionGranted ? (
+
+          <div>
+
+            <p>Pro zobrazení dat je potřeba povolit přístup k senzorům pohybu.</p>
+
+            <button onClick={requestPermission} className={styles.button}>
+
+              Povolit přístup
+
+            </button>
+
+            {error && <p className={styles.error}>{error}</p>}
+
+          </div>
+
+        ) : (
+
+          <div className={styles.dataDisplay}>
+
+            <h2>Vibrace (Akcelerace)</h2>
+
+            <div className={styles.dataGrid}>
+
+              <strong>Úroveň (0-10):</strong> <span>{vibrationLevel}</span>
+
             </div>
-        </div>
-    );
+
+
+            <h2>Orientace (Gyroskop)</h2>
+
+            <div className={styles.dataGrid}>
+
+              <strong>Alpha (otáčení):</strong> <span>{format(orientation.alpha)}</span>
+
+              <strong>Beta (předklon):</strong> <span>{format(orientation.beta)}</span>
+
+              <strong>Gamma (úklon):</strong> <span className={styles.highlight}>{format(orientation.gamma)}</span>
+
+            </div>
+
+
+            <h2>Akcelerace</h2>
+
+            <div className={styles.dataGrid}>
+
+              <strong>Osa X:</strong> <span>{format(acceleration.x)}</span>
+
+              <strong>Osa Y:</strong> <span>{format(acceleration.y)}</span>
+
+              <strong>Osa Z:</strong> <span>{format(acceleration.z)}</span>
+
+            </div>
+
+          </div>
+
+        )}
+
+      </div>
+
+    </div>
+
+  );
+
 };
 
+
 export default Page;
+
