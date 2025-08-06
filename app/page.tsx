@@ -8,42 +8,61 @@ interface DeviceOrientationEventiOS extends DeviceOrientationEvent {
     requestPermission?: () => Promise<'granted' | 'denied' | 'default'>;
 }
 
+// --- ZDE JE FINÁLNÍ OPRAVA ---
+// Rozšiřujeme globální typ, abychom předešli konfliktu.
+declare global {
+    interface ScreenOrientation {
+        lock(orientation: 'landscape'): Promise<void>;
+    }
+}
+
 const Page = () => {
-    // Stavy pro řízení logiky
     const [permissionGranted, setPermissionGranted] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [vibrationLevel, setVibrationLevel] = useState(0);
-
-    // NOVÝ STAV: Sledujeme, zda je tlačítko plynu stisknuté
     const [isGasPressed, setIsGasPressed] = useState(false);
 
-    // Ref proměnné pro plynulost a výkon
     const orientationRef = useRef({ alpha: 0, beta: 0, gamma: 0 });
     const animationFrameId = useRef<number | null>(null);
-    // Ref pro stav plynu, aby smyčka měla vždy aktuální hodnotu
     const gasPressedRef = useRef(false);
 
-    // Funkce pro vyžádání povolení
     const requestPermission = async () => {
-        const DeviceOrientationEvent = window.DeviceOrientationEvent as unknown as DeviceOrientationEventiOS;
-        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try {
+        // Část pro povolení senzorů
+        try {
+            const DeviceOrientationEvent = window.DeviceOrientationEvent as unknown as DeviceOrientationEventiOS;
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 const permissionState = await DeviceOrientationEvent.requestPermission();
                 if (permissionState === 'granted') {
                     setPermissionGranted(true);
                 } else {
                     setError('Přístup k senzorům byl zamítnut.');
+                    return;
                 }
-            } catch (err) {
-                console.error('Došlo k chybě při žádosti o povolení.', err);
-                setError('Došlo k chybě při žádosti o povolení.');
+            } else {
+                setPermissionGranted(true);
             }
-        } else {
-            setPermissionGranted(true);
+        } catch (err) {
+            console.error('Chyba při žádosti o povolení senzorů:', err);
+            setError('Došlo k chybě při žádosti o povolení senzorů.');
+            return;
+        }
+
+        // Část pro fullscreen a zamknutí orientace
+        try {
+            if (document.documentElement.requestFullscreen) {
+                await document.documentElement.requestFullscreen();
+            }
+
+            if (screen.orientation && screen.orientation.lock) {
+                await screen.orientation.lock('landscape');
+            }
+
+        } catch (err) {
+            console.error("Zamknutí orientace nebo fullscreen se nezdařilo:", err);
         }
     };
 
-    // EFEKT 1: Pouze čte a ukládá data ze senzorů
+    // EFEKT 1: Čtení dat ze senzorů
     useEffect(() => {
         if (!permissionGranted) return;
         const handleOrientation = (event: DeviceOrientationEvent) => {
@@ -57,7 +76,7 @@ const Page = () => {
         return () => window.removeEventListener('deviceorientation', handleOrientation);
     }, [permissionGranted]);
 
-    // EFEKT 2: Udržuje ref proměnnou synchronizovanou se stavem plynu
+    // EFEKT 2: Synchronizace stavu plynu s ref proměnnou
     useEffect(() => {
         gasPressedRef.current = isGasPressed;
     }, [isGasPressed]);
@@ -65,21 +84,18 @@ const Page = () => {
     // EFEKT 3: Hlavní smyčka pro vibrace
     useEffect(() => {
         const vibrationLoop = () => {
-            // KLÍČOVÁ PODMÍNKA: Pokud není plyn stisknutý, vypneme vibrace a nic dalšího neděláme.
             if (!gasPressedRef.current) {
                 if (navigator.vibrate) navigator.vibrate(0);
                 setVibrationLevel(0);
                 animationFrameId.current = requestAnimationFrame(vibrationLoop);
                 return;
             }
-
             const { gamma } = orientationRef.current;
             const activeRange = 60.0;
             const clampedGamma = Math.max(-activeRange, Math.min(0, gamma));
             const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
             const easedIntensity = Math.pow(normalizedIntensity, 3);
             setVibrationLevel(Math.round(normalizedIntensity * 10));
-
             if (gamma < -activeRange || gamma > 0) {
                 if (navigator.vibrate) navigator.vibrate(0);
             } else {
@@ -91,25 +107,20 @@ const Page = () => {
                     navigator.vibrate([onDuration, offDuration]);
                 }
             }
-
             animationFrameId.current = requestAnimationFrame(vibrationLoop);
         };
-
         if (permissionGranted) {
             animationFrameId.current = requestAnimationFrame(vibrationLoop);
         }
-
         return () => {
             if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
             if (navigator.vibrate) navigator.vibrate(0);
         };
     }, [permissionGranted]);
 
-    // NOVÉ HANDLERY: Funkce pro ovládání tlačítka plynu
+    // Handlery pro tlačítko plynu
     const handleGasPress = () => setIsGasPressed(true);
     const handleGasRelease = () => setIsGasPressed(false);
-
-    const format = (value: number | null) => value?.toFixed(2) ?? '--';
 
     return (
         <div className={styles.container}>
@@ -118,8 +129,9 @@ const Page = () => {
                 {!permissionGranted ? (
                     <div>
                         <p>Pro ovládání povolte prosím přístup k senzorům pohybu.</p>
+                        <p style={{fontSize: '0.8em', color: '#888'}}>Po stisknutí se stránka přepne na celou obrazovku a otočí na šířku.</p>
                         <button onClick={requestPermission} className={styles.button}>
-                            Povolit přístup
+                            Start & Povolit přístup
                         </button>
                         {error && <p className={styles.error}>{error}</p>}
                     </div>
@@ -129,13 +141,11 @@ const Page = () => {
                             <strong>Úroveň plynu:</strong>
                             <span className={styles.levelText}>{vibrationLevel}</span>
                         </div>
-
-                        {/* NOVÉ TLAČÍTKO: Tlačítko plynu s handlery pro stisk a puštění */}
                         <button
                             className={`${styles.gasButton} ${isGasPressed ? styles.gasButtonPressed : ''}`}
                             onMouseDown={handleGasPress}
                             onMouseUp={handleGasRelease}
-                            onMouseLeave={handleGasRelease} // Pokud uživatel sjede myší z tlačítka
+                            onMouseLeave={handleGasRelease} // Pro případ, že uživatel sjede myší z tlačítka
                             onTouchStart={handleGasPress}
                             onTouchEnd={handleGasRelease}
                         >
