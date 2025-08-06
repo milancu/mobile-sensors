@@ -2,30 +2,27 @@
 
 import { useState, useEffect, useRef } from 'react';
 import styles from './styles/Senzory.module.css';
+import Gauge from './components/Gauge'; // Importujeme novou komponentu
 
-// Typy zůstávají stejné
+// Typy pro lepší kontrolu v TypeScriptu
 interface DeviceOrientationEventiOS extends DeviceOrientationEvent {
     requestPermission?: () => Promise<'granted' | 'denied' | 'default'>;
 }
 
-interface OrientationState {
-    alpha: number | null;
-    beta: number | null;
-    gamma: number | null;
-}
-
 const Page = () => {
-    const [orientation, setOrientation] = useState<OrientationState>({ alpha: null, beta: null, gamma: null });
+    // Stavy pro řízení logiky a zobrazení
     const [permissionGranted, setPermissionGranted] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [vibrationLevel, setVibrationLevel] = useState(0);
+    const [isBraking, setIsBraking] = useState(false);
+    const [isColliding, setIsColliding] = useState(false);
 
-    // KLÍČOVÁ ZMĚNA: Použijeme useRef pro ukládání poslední hodnoty gamma a ID animace.
-    // useRef nezpůsobuje překreslení komponenty, což je pro naši smyčku ideální.
-    const gammaRef = useRef<number>(0);
+    // Ref proměnné pro ukládání dat ze senzorů bez zbytečného překreslování
+    const orientationRef = useRef({ alpha: 0, beta: 0, gamma: 0 });
+    const lastMotionRef = useRef({ x: 0, y: 0, z: 0, timestamp: 0 });
     const animationFrameId = useRef<number | null>(null);
 
-    // Funkce pro povolení zůstává stejná
+    // Funkce pro vyžádání povolení od uživatele
     const requestPermission = async () => {
         const DeviceOrientationEvent = window.DeviceOrientationEvent as unknown as DeviceOrientationEventiOS;
         if (typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -35,97 +32,125 @@ const Page = () => {
                     setPermissionGranted(true);
                 } else {
                     setError('Přístup k senzorům byl zamítnut.');
+                    setPermissionGranted(false);
                 }
             } catch (err) {
                 console.error('Došlo k chybě při žádosti o povolení.', err);
                 setError('Došlo k chybě při žádosti o povolení.');
             }
         } else {
+            // Pro zařízení, která nevyžadují explicitní povolení (např. Android)
             setPermissionGranted(true);
         }
     };
 
-    // KLÍČOVÁ ZMĚNA: Tento useEffect se stará POUZE o čtení dat ze senzorů
+    // EFEKT 1: Připojení a odpojení senzorů
     useEffect(() => {
         if (!permissionGranted) return;
 
         const handleOrientation = (event: DeviceOrientationEvent) => {
-            setOrientation({
-                alpha: event.alpha,
-                beta: event.beta,
-                gamma: event.gamma,
-            });
-            // Uložíme poslední hodnotu gamma do ref proměnné
-            if (event.gamma !== null) {
-                gammaRef.current = event.gamma;
+            orientationRef.current = {
+                alpha: event.alpha ?? 0,
+                beta: event.beta ?? 0,
+                gamma: event.gamma ?? 0,
+            };
+        };
+
+        const handleMotion = (event: DeviceMotionEvent) => {
+            if (!event.acceleration) return;
+            const { x, y, z } = event.acceleration;
+            const now = Date.now();
+            const last = lastMotionRef.current;
+            const timeDiff = now - last.timestamp;
+
+            if (timeDiff > 100) { // Zpracováváme otřesy jen každých 100ms pro efektivitu
+                const deltaX = (x ?? 0) - last.x;
+                const deltaY = (y ?? 0) - last.y;
+                const deltaZ = (z ?? 0) - last.z;
+                // Vypočítáme "jerk" - rychlost změny akcelerace
+                const jerk = Math.sqrt(deltaX**2 + deltaY**2 + deltaZ**2) / (timeDiff / 1000);
+
+                // Detekce nárazu (hodnotu 300 možná bude potřeba vyladit)
+                if (jerk > 300) {
+                    setIsColliding(true);
+                    if (navigator.vibrate) navigator.vibrate(200); // Krátká, silná vibrace nárazu
+                    setTimeout(() => setIsColliding(false), 200); // Vypnutí vizuálního efektu
+                }
+                lastMotionRef.current = { x: x ?? 0, y: y ?? 0, z: z ?? 0, timestamp: now };
             }
         };
 
-        // Přidáme posluchač jen pro orientaci
         window.addEventListener('deviceorientation', handleOrientation);
+        window.addEventListener('devicemotion', handleMotion);
 
         return () => {
             window.removeEventListener('deviceorientation', handleOrientation);
+            window.removeEventListener('devicemotion', handleMotion);
         };
     }, [permissionGranted]);
 
-
-    // KLÍČOVÁ ZMĚNA: Tento useEffect se stará POUZE o spouštění a zastavení VIBRAČNÍ SMYČKY
+    // EFEKT 2: Hlavní smyčka pro vibrace a logiku hry
     useEffect(() => {
-        // Funkce, která se bude volat stále dokola
         const vibrationLoop = () => {
-            // Přečteme si poslední známou hodnotu gamma z ref
-            const currentGamma = gammaRef.current;
+            const { beta, gamma } = orientationRef.current;
 
-            // Zde je veškerá logika pro výpočet síly vibrací
+            // Logika brzdy - má nejvyšší prioritu
+            const newBrakingState = beta > 35; // Brzda se aktivuje při náklonu o více než 35° dopředu
+            setIsBraking(newBrakingState);
+            if (newBrakingState) {
+                if (navigator.vibrate) navigator.vibrate(0);
+                setVibrationLevel(0);
+                animationFrameId.current = requestAnimationFrame(vibrationLoop);
+                return; // Ukončíme cyklus zde, pokud brzdíme
+            }
+
+            // Logika motoru
             const activeRange = 60.0;
-            const clampedGamma = Math.max(-activeRange, Math.min(0, currentGamma));
+            const clampedGamma = Math.max(-activeRange, Math.min(0, gamma));
             const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
             const easedIntensity = Math.pow(normalizedIntensity, 3);
-
             setVibrationLevel(Math.round(normalizedIntensity * 10));
 
-            if (currentGamma < -activeRange || currentGamma > 0) {
-                navigator.vibrate(0);
+            if (gamma < -activeRange || gamma > 0) {
+                if (navigator.vibrate) navigator.vibrate(0);
             } else {
                 if(navigator.vibrate) {
-                    const totalCycleTime = 400;
-                    const minVibrationOn = 50;
-                    const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
-                    const offDuration = 10;
-                    navigator.vibrate([onDuration, offDuration]);
+                    const isRedline = easedIntensity > 0.98;
+                    if (isRedline) {
+                        // Vibrace "omezovače otáček"
+                        navigator.vibrate([20, 20, 20, 100]);
+                    } else {
+                        // Standardní vibrace motoru
+                        const totalCycleTime = 400;
+                        const minVibrationOn = 50;
+                        const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
+                        const offDuration = 10;
+                        navigator.vibrate([onDuration, offDuration]);
+                    }
                 }
             }
 
-            // Naplánujeme další spuštění této funkce
             animationFrameId.current = requestAnimationFrame(vibrationLoop);
         };
 
         if (permissionGranted) {
-            // Spustíme smyčku
             animationFrameId.current = requestAnimationFrame(vibrationLoop);
         }
 
-        // Cleanup funkce: Když komponenta zmizí, musíme smyčku zastavit!
+        // Cleanup funkce: Zastaví smyčku a vibrace při opuštění stránky
         return () => {
-            if (animationFrameId.current) {
-                cancelAnimationFrame(animationFrameId.current);
-            }
-            if (navigator.vibrate) {
-                navigator.vibrate(0); // Pro jistotu vypneme vibrace
-            }
+            if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+            if (navigator.vibrate) navigator.vibrate(0);
         };
-    }, [permissionGranted]); // Smyčka se spustí/zastaví, když se změní stav povolení
-
-    const format = (value: number | null) => value?.toFixed(2) ?? '--';
+    }, [permissionGranted]);
 
     return (
-        <div className={styles.container}>
+        <div className={`${styles.container} ${isColliding ? styles.collisionFlash : ''}`}>
             <div className={styles.card}>
-                <h1>Vibrace motoru</h1>
+                <h1>Palubní deska</h1>
                 {!permissionGranted ? (
                     <div>
-                        <p>Pro simulaci motoru povolte prosím přístup k senzorům pohybu.</p>
+                        <p>Pro simulaci jízdy povolte prosím přístup k senzorům pohybu.</p>
                         <button onClick={requestPermission} className={styles.button}>
                             Povolit přístup
                         </button>
@@ -133,14 +158,13 @@ const Page = () => {
                     </div>
                 ) : (
                     <div className={styles.dataDisplay}>
-                        <h2>Síla motoru</h2>
-                        <div className={styles.dataGrid}>
-                            <strong>Úroveň (0-10):</strong> <span>{vibrationLevel}</span>
-                        </div>
+                        {isBraking && <div className={styles.brakeIndicator}>BRZDA</div>}
 
-                        <h2>Orientace (pouze info)</h2>
-                        <div className={styles.dataGrid}>
-                            <strong>Gamma (úklon):</strong> <span className={styles.highlight}>{format(orientation.gamma)}</span>
+                        <Gauge level={vibrationLevel} />
+
+                        <div className={styles.dataGridInfo}>
+                            <span>Gamma: {orientationRef.current.gamma.toFixed(1)}°</span>
+                            <span>Beta: {orientationRef.current.beta.toFixed(1)}°</span>
                         </div>
                     </div>
                 )}

@@ -1,0 +1,96 @@
+/* app/styles/Gauge.module.css */
+.gaugeContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.gauge {
+    width: 250px;
+    height: 125px; /* Polovina výšky, protože je to půlkruh */
+    position: relative;
+    border-radius: 125px 125px 0 0;
+    background: conic-gradient(
+            from -90deg,
+            #333 0deg 270deg,
+            #ff4d4d 240deg 270deg /* Červená zóna na konci */
+    );
+    overflow: hidden;
+    border: 5px solid #444;
+    box-shadow: inset 0 5px 15px rgba(0,0,0,0.5);
+}
+
+.axis {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
+.tick {
+    position: absolute;
+    width: 2px;
+    height: 10px;
+    background: #eee;
+    left: 50%;
+    top: 0;
+    transform-origin: bottom center;
+}
+/* Rozmístění čárek na stupnici */
+.tick:nth-child(1) { transform: translateX(-50%) rotate(-135deg) translateY(-115px); }
+.tick:nth-child(2) { transform: translateX(-50%) rotate(-108deg) translateY(-115px); }
+.tick:nth-child(3) { transform: translateX(-50%) rotate(-81deg) translateY(-115px); height: 15px;}
+.tick:nth-child(4) { transform: translateX(-50%) rotate(-54deg) translateY(-115px); }
+.tick:nth-child(5) { transform: translateX(-50%) rotate(-27deg) translateY(-115px); }
+.tick:nth-child(6) { transform: translateX(-50%) rotate(0deg) translateY(-115px); height: 15px; background: #fff;}
+.tick:nth-child(7) { transform: translateX(-50%) rotate(27deg) translateY(-115px); }
+.tick:nth-child(8) { transform: translateX(-50%) rotate(54deg) translateY(-115px); }
+.tick:nth-child(9) { transform: translateX(-50%) rotate(81deg) translateY(-115px); height: 15px;}
+.tick:nth-child(10) { transform: translateX(-50%) rotate(108deg) translateY(-115px); }
+.tick:nth-child(11) { transform: translateX(-50%) rotate(135deg) translateY(-115px); }
+
+
+.needle {
+    position: absolute;
+    width: 4px;
+    height: 100px;
+    background: #ff4136;
+    bottom: -50px;
+    left: 50%;
+    transform-origin: bottom center;
+    transform: translateX(-50%) rotate(0deg);
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 4px 4px 0 0;
+    box-shadow: 0 0 10px #ff4136;
+}
+
+.needleRedline {
+    animation: redlinePulse 0.5s infinite;
+}
+
+@keyframes redlinePulse {
+    0% { background: #ff4136; }
+    50% { background: #ff851b; }
+    100% { background: #ff4136; }
+}
+
+.needleCap {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: #222;
+    border-radius: 50%;
+    left: 50%;
+    bottom: -10px;
+    transform: translateX(-50%);
+    border: 3px solid #555;
+    z-index: 10;
+}
+
+.levelDisplay {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 2em;
+    font-weight: bold;
+    color: #eee;
+}
