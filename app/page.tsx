@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import styles from './styles/Senzory.module.css';
 
 // Typy zůstávají stejné
@@ -14,20 +14,18 @@ interface OrientationState {
     gamma: number | null;
 }
 
-interface MotionState {
-    x: number | null;
-    y: number | null;
-    z: number | null;
-}
-
 const Page = () => {
     const [orientation, setOrientation] = useState<OrientationState>({ alpha: null, beta: null, gamma: null });
-    const [acceleration, setAcceleration] = useState<MotionState>({ x: null, y: null, z: null });
     const [permissionGranted, setPermissionGranted] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
     const [vibrationLevel, setVibrationLevel] = useState(0);
 
+    // KLÍČOVÁ ZMĚNA: Použijeme useRef pro ukládání poslední hodnoty gamma a ID animace.
+    // useRef nezpůsobuje překreslení komponenty, což je pro naši smyčku ideální.
+    const gammaRef = useRef<number>(0);
+    const animationFrameId = useRef<number | null>(null);
+
+    // Funkce pro povolení zůstává stejná
     const requestPermission = async () => {
         const DeviceOrientationEvent = window.DeviceOrientationEvent as unknown as DeviceOrientationEventiOS;
         if (typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -37,17 +35,17 @@ const Page = () => {
                     setPermissionGranted(true);
                 } else {
                     setError('Přístup k senzorům byl zamítnut.');
-                    setPermissionGranted(false);
                 }
             } catch (err) {
+                console.error('Došlo k chybě při žádosti o povolení.', err);
                 setError('Došlo k chybě při žádosti o povolení.');
-                console.error(err);
             }
         } else {
             setPermissionGranted(true);
         }
     };
 
+    // KLÍČOVÁ ZMĚNA: Tento useEffect se stará POUZE o čtení dat ze senzorů
     useEffect(() => {
         if (!permissionGranted) return;
 
@@ -57,71 +55,77 @@ const Page = () => {
                 beta: event.beta,
                 gamma: event.gamma,
             });
-
-            if (navigator.vibrate && event.gamma !== null) {
-                const activeRange = 60.0;
-                const clampedGamma = Math.max(-activeRange, Math.min(0, event.gamma));
-
-                // Krok 1: Normalizujeme intenzitu na 0-1 jako předtím
-                const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
-
-                // ZÁSADNÍ ZMĚNA 1: Aplikujeme exponenciální křivku pro dramatičtější zrychlení
-                // Umocněním na třetí bude nárůst zpočátku pomalý a na konci velmi rychlý.
-                const easedIntensity = Math.pow(normalizedIntensity, 3);
-
-                // Pro zobrazení stále používáme původní lineární hodnotu pro lepší přehlednost
-                setVibrationLevel(Math.round(normalizedIntensity * 10));
-
-                if (event.gamma < -activeRange || event.gamma > 0) {
-                    navigator.vibrate(0);
-                } else {
-                    // ZÁSADNÍ ZMĚNA 2: Silnější a plynulejší vibrace
-                    // Zvýšíme celkovou délku cyklu, aby pulzy byly delší a silnější.
-                    const totalCycleTime = 400; // ms (bylo 100)
-
-                    // Zvýšíme minimální sílu, aby motor "běžel" citelněji i na volnoběh.
-                    const minVibrationOn = 50; // ms (bylo 10)
-
-                    // Vypočítáme délku vibrace na základě nové exponenciální intenzity
-                    const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
-
-                    // Pauzu mezi vibracemi nastavíme na velmi malou hodnotu pro pocit kontinuity.
-                    const offDuration = 10; // ms
-
-                    navigator.vibrate([onDuration, offDuration]);
-                }
+            // Uložíme poslední hodnotu gamma do ref proměnné
+            if (event.gamma !== null) {
+                gammaRef.current = event.gamma;
             }
         };
 
-        const handleMotion = (event: DeviceMotionEvent) => {
-            setAcceleration({
-                x: event.acceleration?.x ?? null,
-                y: event.acceleration?.y ?? null,
-                z: event.acceleration?.z ?? null,
-            });
-        };
-
+        // Přidáme posluchač jen pro orientaci
         window.addEventListener('deviceorientation', handleOrientation);
-        window.addEventListener('devicemotion', handleMotion);
 
         return () => {
             window.removeEventListener('deviceorientation', handleOrientation);
-            window.removeEventListener('devicemotion', handleMotion);
-            if (navigator.vibrate) {
-                navigator.vibrate(0);
-            }
         };
     }, [permissionGranted]);
+
+
+    // KLÍČOVÁ ZMĚNA: Tento useEffect se stará POUZE o spouštění a zastavení VIBRAČNÍ SMYČKY
+    useEffect(() => {
+        // Funkce, která se bude volat stále dokola
+        const vibrationLoop = () => {
+            // Přečteme si poslední známou hodnotu gamma z ref
+            const currentGamma = gammaRef.current;
+
+            // Zde je veškerá logika pro výpočet síly vibrací
+            const activeRange = 60.0;
+            const clampedGamma = Math.max(-activeRange, Math.min(0, currentGamma));
+            const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
+            const easedIntensity = Math.pow(normalizedIntensity, 3);
+
+            setVibrationLevel(Math.round(normalizedIntensity * 10));
+
+            if (currentGamma < -activeRange || currentGamma > 0) {
+                navigator.vibrate(0);
+            } else {
+                if(navigator.vibrate) {
+                    const totalCycleTime = 400;
+                    const minVibrationOn = 50;
+                    const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
+                    const offDuration = 10;
+                    navigator.vibrate([onDuration, offDuration]);
+                }
+            }
+
+            // Naplánujeme další spuštění této funkce
+            animationFrameId.current = requestAnimationFrame(vibrationLoop);
+        };
+
+        if (permissionGranted) {
+            // Spustíme smyčku
+            animationFrameId.current = requestAnimationFrame(vibrationLoop);
+        }
+
+        // Cleanup funkce: Když komponenta zmizí, musíme smyčku zastavit!
+        return () => {
+            if (animationFrameId.current) {
+                cancelAnimationFrame(animationFrameId.current);
+            }
+            if (navigator.vibrate) {
+                navigator.vibrate(0); // Pro jistotu vypneme vibrace
+            }
+        };
+    }, [permissionGranted]); // Smyčka se spustí/zastaví, když se změní stav povolení
 
     const format = (value: number | null) => value?.toFixed(2) ?? '--';
 
     return (
         <div className={styles.container}>
             <div className={styles.card}>
-                <h1>Data ze senzorů (Next.js)</h1>
+                <h1>Vibrace motoru</h1>
                 {!permissionGranted ? (
                     <div>
-                        <p>Pro zobrazení dat je potřeba povolit přístup k senzorům pohybu.</p>
+                        <p>Pro simulaci motoru povolte prosím přístup k senzorům pohybu.</p>
                         <button onClick={requestPermission} className={styles.button}>
                             Povolit přístup
                         </button>
@@ -129,23 +133,14 @@ const Page = () => {
                     </div>
                 ) : (
                     <div className={styles.dataDisplay}>
-                        <h2>Vibrace (Akcelerace)</h2>
+                        <h2>Síla motoru</h2>
                         <div className={styles.dataGrid}>
                             <strong>Úroveň (0-10):</strong> <span>{vibrationLevel}</span>
                         </div>
 
-                        <h2>Orientace (Gyroskop)</h2>
+                        <h2>Orientace (pouze info)</h2>
                         <div className={styles.dataGrid}>
-                            <strong>Alpha (otáčení):</strong> <span>{format(orientation.alpha)}</span>
-                            <strong>Beta (předklon):</strong> <span>{format(orientation.beta)}</span>
                             <strong>Gamma (úklon):</strong> <span className={styles.highlight}>{format(orientation.gamma)}</span>
-                        </div>
-
-                        <h2>Akcelerace</h2>
-                        <div className={styles.dataGrid}>
-                            <strong>Osa X:</strong> <span>{format(acceleration.x)}</span>
-                            <strong>Osa Y:</strong> <span>{format(acceleration.y)}</span>
-                            <strong>Osa Z:</strong> <span>{format(acceleration.z)}</span>
                         </div>
                     </div>
                 )}
