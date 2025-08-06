@@ -1,3 +1,5 @@
+/* Přidejte nebo nahraďte tyto styly ve vašem souboru Senzory.module.css */
+
 .container {
     min-height: 100vh;
     display: flex;
@@ -26,7 +28,7 @@
     margin-bottom: 25px;
 }
 
-.button {
+.button { /* Původní tlačítko pro povolení */
     padding: 12px 24px;
     font-size: 1.1em;
     font-weight: bold;
@@ -36,54 +38,59 @@
     border-radius: 8px;
     cursor: pointer;
     margin-top: 15px;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(0, 123, 255, 0.4);
-}
-
-.dataDisplay {
-    animation: fadeIn 0.5s ease-in-out;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.dataGrid {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 10px 20px;
-    text-align: left;
-}
-
-.dataGrid strong {
-    color: #a0a0a0;
-    font-weight: 500;
-}
-
-.dataGrid span {
-    font-family: "SF Mono", "Fira Code", "Courier New", monospace;
-    font-weight: bold;
-    color: #4caf50;
-    background-color: #333;
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-
-.dataDisplay h2 {
-    font-size: 1.2em;
-    color: #cccccc;
-    margin-top: 25px;
-    margin-bottom: 15px;
-    border-bottom: 1px solid #444;
-    padding-bottom: 8px;
 }
 
 .error {
     color: #ff4d4d;
     margin-top: 20px;
+}
+
+/* Nové styly pro ovládací rozhraní */
+.controlInterface {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+}
+
+.infoDisplay {
+    font-size: 1.2em;
+    color: #aaa;
+}
+
+.levelText {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-weight: bold;
+    font-size: 1.5em;
+    color: #4caf50;
+    margin-left: 10px;
+}
+
+.gasButton {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    border: 5px solid #444;
+    background-color: #333;
+    color: #fff;
+    font-size: 1.8em;
+    font-weight: bold;
+    cursor: pointer;
+    user-select: none; /* Zabrání označování textu na tlačítku */
+    transition: all 0.1s ease-out;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+}
+
+.gasButton:hover {
+    border-color: #666;
+}
+
+.gasButtonPressed {
+    background-color: #4caf50;
+    border-color: #81c784;
+    transform: scale(0.95);
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.5);
 }

@@ -2,27 +2,28 @@
 
 import { useState, useEffect, useRef } from 'react';
 import styles from './styles/Senzory.module.css';
-import Gauge from './components/Gauge'; // Importujeme novou komponentu
 
-// Typy pro lepší kontrolu v TypeScriptu
+// Typy pro TypeScript
 interface DeviceOrientationEventiOS extends DeviceOrientationEvent {
     requestPermission?: () => Promise<'granted' | 'denied' | 'default'>;
 }
 
 const Page = () => {
-    // Stavy pro řízení logiky a zobrazení
+    // Stavy pro řízení logiky
     const [permissionGranted, setPermissionGranted] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [vibrationLevel, setVibrationLevel] = useState(0);
-    const [isBraking, setIsBraking] = useState(false);
-    const [isColliding, setIsColliding] = useState(false);
 
-    // Ref proměnné pro ukládání dat ze senzorů bez zbytečného překreslování
+    // NOVÝ STAV: Sledujeme, zda je tlačítko plynu stisknuté
+    const [isGasPressed, setIsGasPressed] = useState(false);
+
+    // Ref proměnné pro plynulost a výkon
     const orientationRef = useRef({ alpha: 0, beta: 0, gamma: 0 });
-    const lastMotionRef = useRef({ x: 0, y: 0, z: 0, timestamp: 0 });
     const animationFrameId = useRef<number | null>(null);
+    // Ref pro stav plynu, aby smyčka měla vždy aktuální hodnotu
+    const gasPressedRef = useRef(false);
 
-    // Funkce pro vyžádání povolení od uživatele
+    // Funkce pro vyžádání povolení
     const requestPermission = async () => {
         const DeviceOrientationEvent = window.DeviceOrientationEvent as unknown as DeviceOrientationEventiOS;
         if (typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -32,22 +33,19 @@ const Page = () => {
                     setPermissionGranted(true);
                 } else {
                     setError('Přístup k senzorům byl zamítnut.');
-                    setPermissionGranted(false);
                 }
             } catch (err) {
                 console.error('Došlo k chybě při žádosti o povolení.', err);
                 setError('Došlo k chybě při žádosti o povolení.');
             }
         } else {
-            // Pro zařízení, která nevyžadují explicitní povolení (např. Android)
             setPermissionGranted(true);
         }
     };
 
-    // EFEKT 1: Připojení a odpojení senzorů
+    // EFEKT 1: Pouze čte a ukládá data ze senzorů
     useEffect(() => {
         if (!permissionGranted) return;
-
         const handleOrientation = (event: DeviceOrientationEvent) => {
             orientationRef.current = {
                 alpha: event.alpha ?? 0,
@@ -55,85 +53,42 @@ const Page = () => {
                 gamma: event.gamma ?? 0,
             };
         };
-
-        const handleMotion = (event: DeviceMotionEvent) => {
-            if (!event.acceleration) return;
-            const { x, y, z } = event.acceleration;
-            const now = Date.now();
-            const last = lastMotionRef.current;
-            const timeDiff = now - last.timestamp;
-
-            if (timeDiff > 100) { // Zpracováváme otřesy jen každých 100ms pro efektivitu
-                const deltaX = (x ?? 0) - last.x;
-                const deltaY = (y ?? 0) - last.y;
-                const deltaZ = (z ?? 0) - last.z;
-                // Vypočítáme "jerk" - rychlost změny akcelerace
-                const jerk = Math.sqrt(deltaX**2 + deltaY**2 + deltaZ**2) / (timeDiff / 1000);
-
-                // Detekce nárazu (hodnotu 300 možná bude potřeba vyladit)
-                if (jerk > 300) {
-                    setIsColliding(true);
-                    if (navigator.vibrate) navigator.vibrate(200); // Krátká, silná vibrace nárazu
-                    setTimeout(() => setIsColliding(false), 200); // Vypnutí vizuálního efektu
-                }
-                lastMotionRef.current = { x: x ?? 0, y: y ?? 0, z: z ?? 0, timestamp: now };
-            }
-        };
-
         window.addEventListener('deviceorientation', handleOrientation);
-        window.addEventListener('devicemotion', handleMotion);
-
-        return () => {
-            window.removeEventListener('deviceorientation', handleOrientation);
-            window.removeEventListener('devicemotion', handleMotion);
-        };
+        return () => window.removeEventListener('deviceorientation', handleOrientation);
     }, [permissionGranted]);
 
-    // EFEKT 2: Hlavní smyčka pro vibrace a logiku hry
-// Nahraďte tento useEffect ve vašem souboru app/page.tsx
+    // EFEKT 2: Udržuje ref proměnnou synchronizovanou se stavem plynu
+    useEffect(() => {
+        gasPressedRef.current = isGasPressed;
+    }, [isGasPressed]);
 
-// EFEKT 2: Hlavní smyčka pro vibrace a logiku hry
+    // EFEKT 3: Hlavní smyčka pro vibrace
     useEffect(() => {
         const vibrationLoop = () => {
-            const { beta, gamma } = orientationRef.current;
-
-            // Logika brzdy - má nejvyšší prioritu
-            const newBrakingState = beta > 35;
-            setIsBraking(newBrakingState);
-            if (newBrakingState) {
+            // KLÍČOVÁ PODMÍNKA: Pokud není plyn stisknutý, vypneme vibrace a nic dalšího neděláme.
+            if (!gasPressedRef.current) {
                 if (navigator.vibrate) navigator.vibrate(0);
                 setVibrationLevel(0);
                 animationFrameId.current = requestAnimationFrame(vibrationLoop);
                 return;
             }
 
-            // Logika motoru
+            const { gamma } = orientationRef.current;
             const activeRange = 60.0;
             const clampedGamma = Math.max(-activeRange, Math.min(0, gamma));
             const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
+            const easedIntensity = Math.pow(normalizedIntensity, 3);
             setVibrationLevel(Math.round(normalizedIntensity * 10));
 
             if (gamma < -activeRange || gamma > 0) {
                 if (navigator.vibrate) navigator.vibrate(0);
             } else {
                 if(navigator.vibrate) {
-
-                    // ZÁSADNÍ ZMĚNA ZDE: Dva odlišené režimy
-                    const afterburnerThreshold = -15.0; // Hranice pro přepnutí na silnější režim
-
-                    if (gamma > afterburnerThreshold) {
-                        // REŽIM 2: "FORSÁŽ" - Agresivní, rychlé a krátké pulzy
-                        // Tento vzor působí velmi intenzivně a "chraplavě".
-                        navigator.vibrate([25, 15, 25, 15, 25, 15]);
-                    } else {
-                        // REŽIM 1: BĚŽNÝ MOTOR - Plynulý a silný "hukot"
-                        const easedIntensity = Math.pow(normalizedIntensity, 3);
-                        const totalCycleTime = 400;
-                        const minVibrationOn = 50;
-                        const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
-                        const offDuration = 10;
-                        navigator.vibrate([onDuration, offDuration]);
-                    }
+                    const totalCycleTime = 400;
+                    const minVibrationOn = 50;
+                    const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
+                    const offDuration = 10;
+                    navigator.vibrate([onDuration, offDuration]);
                 }
             }
 
@@ -150,28 +105,42 @@ const Page = () => {
         };
     }, [permissionGranted]);
 
+    // NOVÉ HANDLERY: Funkce pro ovládání tlačítka plynu
+    const handleGasPress = () => setIsGasPressed(true);
+    const handleGasRelease = () => setIsGasPressed(false);
+
+    const format = (value: number | null) => value?.toFixed(2) ?? '--';
+
     return (
-        <div className={`${styles.container} ${isColliding ? styles.collisionFlash : ''}`}>
+        <div className={styles.container}>
             <div className={styles.card}>
-                <h1>Palubní deska</h1>
+                <h1>Ovladač RC Auta</h1>
                 {!permissionGranted ? (
                     <div>
-                        <p>Pro simulaci jízdy povolte prosím přístup k senzorům pohybu.</p>
+                        <p>Pro ovládání povolte prosím přístup k senzorům pohybu.</p>
                         <button onClick={requestPermission} className={styles.button}>
                             Povolit přístup
                         </button>
                         {error && <p className={styles.error}>{error}</p>}
                     </div>
                 ) : (
-                    <div className={styles.dataDisplay}>
-                        {isBraking && <div className={styles.brakeIndicator}>BRZDA</div>}
-
-                        <Gauge level={vibrationLevel} />
-
-                        <div className={styles.dataGridInfo}>
-                            <span>Gamma: {orientationRef.current.gamma.toFixed(1)}°</span>
-                            <span>Beta: {orientationRef.current.beta.toFixed(1)}°</span>
+                    <div className={styles.controlInterface}>
+                        <div className={styles.infoDisplay}>
+                            <strong>Úroveň plynu:</strong>
+                            <span className={styles.levelText}>{vibrationLevel}</span>
                         </div>
+
+                        {/* NOVÉ TLAČÍTKO: Tlačítko plynu s handlery pro stisk a puštění */}
+                        <button
+                            className={`${styles.gasButton} ${isGasPressed ? styles.gasButtonPressed : ''}`}
+                            onMouseDown={handleGasPress}
+                            onMouseUp={handleGasRelease}
+                            onMouseLeave={handleGasRelease} // Pokud uživatel sjede myší z tlačítka
+                            onTouchStart={handleGasPress}
+                            onTouchEnd={handleGasRelease}
+                        >
+                            Plyn
+                        </button>
                     </div>
                 )}
             </div>
