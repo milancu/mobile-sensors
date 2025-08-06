@@ -90,37 +90,44 @@ const Page = () => {
     }, [permissionGranted]);
 
     // EFEKT 2: Hlavní smyčka pro vibrace a logiku hry
+// Nahraďte tento useEffect ve vašem souboru app/page.tsx
+
+// EFEKT 2: Hlavní smyčka pro vibrace a logiku hry
     useEffect(() => {
         const vibrationLoop = () => {
             const { beta, gamma } = orientationRef.current;
 
             // Logika brzdy - má nejvyšší prioritu
-            const newBrakingState = beta > 35; // Brzda se aktivuje při náklonu o více než 35° dopředu
+            const newBrakingState = beta > 35;
             setIsBraking(newBrakingState);
             if (newBrakingState) {
                 if (navigator.vibrate) navigator.vibrate(0);
                 setVibrationLevel(0);
                 animationFrameId.current = requestAnimationFrame(vibrationLoop);
-                return; // Ukončíme cyklus zde, pokud brzdíme
+                return;
             }
 
             // Logika motoru
             const activeRange = 60.0;
             const clampedGamma = Math.max(-activeRange, Math.min(0, gamma));
             const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
-            const easedIntensity = Math.pow(normalizedIntensity, 3);
             setVibrationLevel(Math.round(normalizedIntensity * 10));
 
             if (gamma < -activeRange || gamma > 0) {
                 if (navigator.vibrate) navigator.vibrate(0);
             } else {
                 if(navigator.vibrate) {
-                    const isRedline = easedIntensity > 0.98;
-                    if (isRedline) {
-                        // Vibrace "omezovače otáček"
-                        navigator.vibrate([20, 20, 20, 100]);
+
+                    // ZÁSADNÍ ZMĚNA ZDE: Dva odlišené režimy
+                    const afterburnerThreshold = -15.0; // Hranice pro přepnutí na silnější režim
+
+                    if (gamma > afterburnerThreshold) {
+                        // REŽIM 2: "FORSÁŽ" - Agresivní, rychlé a krátké pulzy
+                        // Tento vzor působí velmi intenzivně a "chraplavě".
+                        navigator.vibrate([25, 15, 25, 15, 25, 15]);
                     } else {
-                        // Standardní vibrace motoru
+                        // REŽIM 1: BĚŽNÝ MOTOR - Plynulý a silný "hukot"
+                        const easedIntensity = Math.pow(normalizedIntensity, 3);
                         const totalCycleTime = 400;
                         const minVibrationOn = 50;
                         const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
@@ -137,7 +144,6 @@ const Page = () => {
             animationFrameId.current = requestAnimationFrame(vibrationLoop);
         }
 
-        // Cleanup funkce: Zastaví smyčku a vibrace při opuštění stránky
         return () => {
             if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
             if (navigator.vibrate) navigator.vibrate(0);
