@@ -59,26 +59,34 @@ const Page = () => {
             });
 
             if (navigator.vibrate && event.gamma !== null) {
-                // ZMĚNA: Pracovní rozsah je nyní -60 až 0
                 const activeRange = 60.0;
                 const clampedGamma = Math.max(-activeRange, Math.min(0, event.gamma));
 
-                // ZMĚNA: Převádíme gamma na normalizovanou hodnotu 0 až 1
+                // Krok 1: Normalizujeme intenzitu na 0-1 jako předtím
                 const normalizedIntensity = (clampedGamma + activeRange) / activeRange;
 
-                // Pro zobrazení stále používáme úroveň 0-10
+                // ZÁSADNÍ ZMĚNA 1: Aplikujeme exponenciální křivku pro dramatičtější zrychlení
+                // Umocněním na třetí bude nárůst zpočátku pomalý a na konci velmi rychlý.
+                const easedIntensity = Math.pow(normalizedIntensity, 3);
+
+                // Pro zobrazení stále používáme původní lineární hodnotu pro lepší přehlednost
                 setVibrationLevel(Math.round(normalizedIntensity * 10));
 
-                // ZMĚNA: Pokud jsme mimo aktivní rozsah, vypneme vibrace
                 if (event.gamma < -activeRange || event.gamma > 0) {
                     navigator.vibrate(0);
                 } else {
-                    // ZMĚNA: Logika pro plynulou vibraci pomocí vzoru
-                    const totalCycleTime = 100; // Celková délka jednoho cyklu vibrace+pauza v ms
-                    const minVibrationOn = 10; // Minimální délka vibrace, aby vrněl i na minimu
+                    // ZÁSADNÍ ZMĚNA 2: Silnější a plynulejší vibrace
+                    // Zvýšíme celkovou délku cyklu, aby pulzy byly delší a silnější.
+                    const totalCycleTime = 400; // ms (bylo 100)
 
-                    const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * normalizedIntensity);
-                    const offDuration = totalCycleTime - onDuration;
+                    // Zvýšíme minimální sílu, aby motor "běžel" citelněji i na volnoběh.
+                    const minVibrationOn = 50; // ms (bylo 10)
+
+                    // Vypočítáme délku vibrace na základě nové exponenciální intenzity
+                    const onDuration = minVibrationOn + ((totalCycleTime - minVibrationOn) * easedIntensity);
+
+                    // Pauzu mezi vibracemi nastavíme na velmi malou hodnotu pro pocit kontinuity.
+                    const offDuration = 10; // ms
 
                     navigator.vibrate([onDuration, offDuration]);
                 }
